@@ -1,3 +1,9 @@
+# Unreleased
+
+## Bug Fixes
+
+- **Opt-in scroll edge pointer absorption:** `GlassScrollEdgeEffect` and `GlassScaffold` can absorb touches in their fade zones when `absorbPointer` is enabled; it defaults to `false`.
+
 # 1.11.1
 
 ## Bug Fixes
