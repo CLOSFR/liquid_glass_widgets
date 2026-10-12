@@ -1,8 +1,22 @@
-# Unreleased
+# 1.12.0
+
+## Features
+
+- **Opt-in scroll edge pointer absorption (PR #413):** `GlassScrollEdgeEffect` and `GlassScaffold` can absorb touches in their fade zones when `absorbPointer` (`edgeFadeAbsorbsPointers` on `GlassScaffold`) is enabled; defaults to `false`.
+
+  Thanks to [@yohom](https://github.com/yohom) for the contribution (#413).
+
+## Bug Fixes
+
+- **Anti-aliased premium pill and curved silhouettes (PR #415):** Fixed stair-stepping artifacts on curved glass silhouettes (notably `GlassTabBar`'s indicator pill during drags) by extending the geometry matte's coverage fade to full transparency and filtering transformed mattes bilinearly.
+
+  Thanks to [@gbahry](https://github.com/gbahry) for the fix (#415).
 
 ## Performance
 
-- **Morph springs stop once nothing visibly moves:** `GlassMorphController` ran its springs with Flutter's default `Tolerance`, which only counts a spring as done below 0.001 units a second. The normal open kept ticking for about 1.2 s and the close for 0.92 s, although the motion is over at 0.70 s and 0.53 s, and every one of those ticks rebuilt and repainted the morph. Springs now settle within 0.001 of their target and below 0.05 a second, under a pixel either way, and land exactly on the target. `GlassMenu`, `GlassPopover` and the modal sheet morph all use the controller; a `GlassMenu` open and close now draws a third fewer frames, with the same motion.
+- **Morph spring early settle & frame savings (PR #417):** `GlassMorphController` now uses an optimized settling tolerance so springs complete once motion is visually imperceptible. Eliminates trailing rebuild and repaint ticks across `GlassMenu`, `GlassPopover`, and modal sheets, reducing frame draw overhead by ~30%.
+
+  Thanks to [@Ahmadre](https://github.com/Ahmadre) for the contribution (#417).
 
 # 1.11.1
 
@@ -13,8 +27,6 @@
 - **Engine lifecycle hardening (PR #410):** Fragment shaders are no longer reloaded on every rebuild. Blend groups release their group link on dispose and follow `renderLink` changes when reparented. Removing a glass shape from a layer repaints its matte, so no ghost of it remains. Duplicate shape registrations on detached render objects are prevented, and the native picture recorded for an asynchronous geometry cache is released as soon as it is rendered.
 
 - **Fragment shaders are now disposed:** `MultiShaderBuilder` disposes the shaders it creates when it unmounts, and the ones it replaces when its keys change (after the frame that last used them), instead of leaving them to the garbage collector.
-
-- **Premium-quality rounded edges stair-stepped instead of anti-aliasing:** The geometry matte's coverage fade stopped at the silhouette instead of running to transparent, leaving a hard step that showed on a `GlassTabBar`'s indicator pill at rest and, because the pill's matte is resampled under its drag transform, more obviously while it was being dragged. The fade now covers the full band, and a shape's matte drawn under a transform (a `LiquidStretch` inside a shared layer, for example) is filtered bilinearly rather than per-pixel.
 
 # 1.11.0
 
