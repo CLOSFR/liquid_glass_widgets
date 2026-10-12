@@ -346,31 +346,24 @@ class GlassMorphController extends ChangeNotifier {
   /// controller ticking, and the surface repainting, for about half a second
   /// after anything visibly moved: an open settled after 1.2 s, a close after
   /// 0.93 s, while the motion ended at 0.72 s and 0.53 s.
-  static const Tolerance settleTolerance =
+  static const Tolerance _settleTolerance =
       Tolerance(distance: 0.001, velocity: 0.05);
 
-  double _target = 0.0;
-
   void _runSpring(double target, {required double velocityHint}) {
-    _target = target;
-    final sim = SpringSimulation(
-      _effectiveSpring,
-      _animationController.value,
-      target,
-      velocityHint,
-      tolerance: settleTolerance,
+    _animationController.animateWith(
+      SpringSimulation(
+        _effectiveSpring,
+        _animationController.value,
+        target,
+        velocityHint,
+        // The spring is "done" within [_settleTolerance] of its target, not on
+        // it. snapToEnd reports the exact target on that final tick, so the
+        // controller lands on 1.0 / 0.0 in the same tick it completes and its
+        // AnimationStatus goes forward -> completed as usual.
+        snapToEnd: true,
+        tolerance: _settleTolerance,
+      ),
     );
-    _animationController.animateWith(sim).whenComplete(_snapToTarget);
-  }
-
-  /// A spring stops within [settleTolerance] of its target, not on it; land
-  /// on it exactly so the settled shape matches the target size and a closed
-  /// morph reads 0.
-  void _snapToTarget() {
-    if (_animationController.isAnimating) return;
-    if (_animationController.value != _target) {
-      _animationController.value = _target;
-    }
   }
 
   void _onTick() {

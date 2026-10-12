@@ -538,5 +538,34 @@ void main() {
       await runUntilStill(tester, ctrl);
       expect(ctrl.value, 0.0);
     });
+
+    testWidgets(
+        'settling keeps the status at completed, with no event after it',
+        (tester) async {
+      final ctrl = await _mount(tester);
+      final statuses = <AnimationStatus>[];
+      ctrl.animation.addStatusListener(statuses.add);
+
+      ctrl.open();
+      await runUntilStill(tester, ctrl);
+      // Let any microtask queued by the completion run before asserting.
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(ctrl.value, 1.0);
+      expect(ctrl.status, AnimationStatus.completed);
+      expect(ctrl.animation.isCompleted, isTrue);
+      // Landing on the target must not report a status after `completed`:
+      // GlassMenu and GlassPopover gate their hide logic on `forward`.
+      expect(statuses, [AnimationStatus.forward, AnimationStatus.completed]);
+
+      statuses.clear();
+      ctrl.close();
+      await runUntilStill(tester, ctrl);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(ctrl.value, 0.0);
+      expect(ctrl.status, AnimationStatus.completed);
+      expect(statuses.last, AnimationStatus.completed);
+    });
   });
 }
