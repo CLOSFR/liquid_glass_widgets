@@ -447,7 +447,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     final a = m[0], b = m[1], c = m[4], d = m[5];
     const epsilon = 1e-6;
     final det = a * d - b * c;
-    if ((b.abs() < epsilon && c.abs() < epsilon) || det.abs() < epsilon) {
+    // Fast path only for unrotated, unflipped transforms: a 180° turn or a
+    // flip is also axis-aligned but needs the rotated normals.
+    final axisAligned =
+        b.abs() < epsilon && c.abs() < epsilon && a > 0 && d > 0;
+    if (axisAligned || det.abs() < epsilon) {
       final activeBounds = MatrixUtils.transformRect(
         transform,
         _geometryLocalBounds,
