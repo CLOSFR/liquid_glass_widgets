@@ -322,10 +322,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         //
         // Locking the shader mapping to the precise bounds the texture was built
         // with ensures stable pixel positioning for the life of the texture.
-        final activeBounds = MatrixUtils.transformRect(
+        final mapping = _geometryMapping(
           matteTransform,
-          _geometryLocalBounds,
-        ).snapToPixels(devicePixelRatio);
+          devicePixelRatio,
+          Offset.zero,
+        );
 
         // Scale physical thickness to maintain identical logical rim width across DPRs.
         // The baseline visual thickness was tuned on a 3x Retina display.
@@ -339,8 +340,8 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
           })
           ..setFloatUniforms(initialIndex: 2, (value) {
             value
-              ..setOffset(activeBounds.topLeft * devicePixelRatio)
-              ..setSize(activeBounds.size * devicePixelRatio);
+              ..setOffset(mapping.offset)
+              ..setSize(mapping.size);
           })
           ..setFloatUniforms(initialIndex: 6, (value) {
             value
@@ -404,6 +405,10 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
               ..setOffset(_touchPosition * devicePixelRatio)
               ..setFloat(_touchIntensity.clamp(0.0, 1.0));
           })
+          // Slots 37-40: uGeometryInverse; 41-42: uGeometryRotation.
+          ..setFloatUniforms(initialIndex: 37, (value) {
+            value.setFloats(mapping.transformFloats);
+          })
           ..setImageSampler(
             1,
             geometryImage,
@@ -419,6 +424,57 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     }
 
     super.paint(context, offset);
+  }
+
+  /// Maps screen physical pixels into the geometry texture's local frame.
+  ///
+  /// Axis-aligned transforms (translation and scale) keep the snapped
+  /// screen-space bounding box with an identity inverse, so they render exactly
+  /// as before. A rotated or skewed transform places [_geometryLocalBounds]'s
+  /// transformed top-left as the origin and passes the inverse of the linear
+  /// part, so the shader samples the shape in its own frame: the rotated shape
+  /// is never stretched over its axis-aligned bounding box.
+  ///
+  /// [origin] is subtracted from screen positions (the capture origin on the
+  /// capture path, zero otherwise). `transformFloats` holds uGeometryInverse
+  /// (row-major) followed by uGeometryRotation (cos, sin).
+  ({Offset offset, Size size, List<double> transformFloats}) _geometryMapping(
+    Matrix4 transform,
+    double dpr,
+    Offset origin,
+  ) {
+    final m = transform.storage;
+    final a = m[0], b = m[1], c = m[4], d = m[5];
+    const epsilon = 1e-6;
+    final det = a * d - b * c;
+    if ((b.abs() < epsilon && c.abs() < epsilon) || det.abs() < epsilon) {
+      final activeBounds = MatrixUtils.transformRect(
+        transform,
+        _geometryLocalBounds,
+      ).snapToPixels(dpr);
+      return (
+        offset: (activeBounds.topLeft - origin) * dpr,
+        size: activeBounds.size * dpr,
+        transformFloats: const [1.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+      );
+    }
+    final topLeft = MatrixUtils.transformPoint(
+      transform,
+      _geometryLocalBounds.topLeft,
+    );
+    final angle = atan2(b, a);
+    return (
+      offset: (topLeft - origin) * dpr,
+      size: _geometryLocalBounds.size * dpr,
+      transformFloats: [
+        d / det,
+        -c / det,
+        -b / det,
+        a / det,
+        cos(angle),
+        sin(angle),
+      ],
+    );
   }
 
   void _clearGeometryImage() {
@@ -479,18 +535,16 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     final captureSize =
         ui.Size(capture.width.toDouble(), capture.height.toDouble());
 
-    // Geometry bounds in screen space, snapped to pixels.
-    final activeBounds = MatrixUtils.transformRect(
-      matteTransform,
-      _geometryLocalBounds,
-    ).snapToPixels(dpr);
-
     // uGeometryOffset/uGeometrySize are relative to the capture origin
     // (not screen origin) so that geometryUV = (fragCoord + uCaptureOffset -
     // uGeometryOffset) / uGeometrySize resolves correctly.
-    final geometryOffsetInCapture =
-        (activeBounds.topLeft - captureOriginInScreenSpace) * dpr;
-    final geometrySizePhysical = activeBounds.size * dpr;
+    final mapping = _geometryMapping(
+      matteTransform,
+      dpr,
+      captureOriginInScreenSpace,
+    );
+    final geometryOffsetInCapture = mapping.offset;
+    final geometrySizePhysical = mapping.size;
     final scale = dpr / 3.0;
 
     renderShader!
@@ -562,6 +616,10 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         value
           ..setOffset(_touchPosition * dpr)
           ..setFloat(_touchIntensity.clamp(0.0, 1.0));
+      })
+      // Slots 37-40: uGeometryInverse; 41-42: uGeometryRotation.
+      ..setFloatUniforms(initialIndex: 37, (value) {
+        value.setFloats(mapping.transformFloats);
       })
       // Slot 0: captured background image (replaces the BackdropFilter read).
       ..setImageSampler(0, capture)

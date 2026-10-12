@@ -114,6 +114,19 @@ uniform vec2 uTouchPosition;
 // effectively free on all GPU architectures).
 uniform float uTouchIntensity;
 
+// Slots 37-40: uGeometryInverse — row-major inverse of the 2x2 linear part of
+// the shape's screen transform, mapping (fragCoord - uGeometryOffset) back into
+// the geometry texture's local frame before dividing by uGeometrySize.
+// Identity (1, 0, 0, 1) for axis-aligned transforms, where uGeometryOffset /
+// uGeometrySize keep describing the screen-space bounding box as before.
+uniform vec4 uGeometryInverse;
+
+// Slots 41-42: uGeometryRotation — (cos, sin) of the shape's screen rotation.
+// Rotates local-frame normals and pinch offsets into screen space so
+// refraction, dispersion and lighting follow a rotated shape. The light
+// direction stays in screen space. (1, 0) when not rotated.
+uniform vec2 uGeometryRotation;
+
 uniform sampler2D uBackgroundTexture;
 uniform sampler2D uGeometryTexture;
 
@@ -205,7 +218,10 @@ void main() {
         screenUV.y = 1.0 - screenUV.y;
     #endif
 
-    vec2 geometryUV = (fragCoord - uGeometryOffset) / uGeometrySize;
+    vec2 geometryDelta = fragCoord - uGeometryOffset;
+    vec2 geometryUV = vec2(
+        dot(uGeometryInverse.xy, geometryDelta),
+        dot(uGeometryInverse.zw, geometryDelta)) / uGeometrySize;
     #ifdef LGR_GLES_FLIP_SAMPLE_Y
         geometryUV.y = 1.0 - geometryUV.y;
     #endif
@@ -241,7 +257,10 @@ void main() {
     // normalize(displacement) as a proxy for the normal — which diverges
     // from the true normal in blend-group neck zones (smooth-union joins).
     // The true normal is now decoded and used for both refraction and lighting.
-    vec2 normalXY = decodeNormalXY(geometryData);
+    vec2 localNormalXY = decodeNormalXY(geometryData);
+    vec2 normalXY = vec2(
+        uGeometryRotation.x * localNormalXY.x - uGeometryRotation.y * localNormalXY.y,
+        uGeometryRotation.y * localNormalXY.x + uGeometryRotation.x * localNormalXY.y);
     float normalZSq = max(0.0, 1.0 - dot(normalXY, normalXY));
     float normalZ   = sqrt(normalZSq);
     vec3  normal    = vec3(normalXY, normalZ);   // unit-length surface normal
@@ -314,7 +333,10 @@ void main() {
         // Vector pointing outwards from the pill centre, scaled by the ramp.
         // uPinchStrength interpolates the effect during spring animations.
         // 0.025 is the baseline UV shift magnitude (subtle but visible).
-        vec2 pinchShift = centered * pinchRamp * uPinchStrength * 0.025;
+        vec2 screenCentered = vec2(
+            uGeometryRotation.x * centered.x - uGeometryRotation.y * centered.y,
+            uGeometryRotation.y * centered.x + uGeometryRotation.x * centered.y);
+        vec2 pinchShift = screenCentered * pinchRamp * uPinchStrength * 0.025;
 
         // Feather the pinch shift to zero at the pill's SDF boundary.
         // Without this, there is a hard UV discontinuity at the pill edge:
